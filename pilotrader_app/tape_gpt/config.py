@@ -1,52 +1,82 @@
 # file: tape_gpt/config.py
 import os
+import json
 from dataclasses import dataclass
 
-# tenta usar st.secrets (se existir) e env var como fallback
-try:
-    import streamlit as st
-    _SECRETS = st.secrets
-except Exception:
-    _SECRETS = {}
-
+# ========== Helpers para resolver a OPENAI_API_KEY ==========
 def _get_env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
+def _get_from_streamlit_secrets(name: str) -> str:
+    try:
+        import streamlit as st
+        try:
+            # acesso direto evita parse global de secrets inexistentes
+            val = st.secrets[name]
+            return str(val) if val is not None else ""
+        except Exception:
+            return ""
+    except Exception:
+        return ""
+
 def _get_from_snowflake_secret(secret_fqn: str) -> str:
-    """
-    Lê um SECRET do Snowflake via SYSTEM$GET_SECRET('DB.SCHEMA.SECRET_NAME').
-    Para TYPE=GENERIC_STRING, retorna 'secret_string'.
-    Para TYPE=PASSWORD, retorna 'password'.
-    """
+    """Lê SECRET do Snowflake via SYSTEM$GET_SECRET('DB.SCHEMA.NAME')."""
+    if not secret_fqn:
+        return ""
     try:
         from snowflake.snowpark.context import get_active_session
         session = get_active_session()
         row = session.sql(f"select system$get_secret('{secret_fqn}')").collect()[0]
-        data = row[0]  # Variant -> dict
-        return data.get("secret_string") or data.get("password") or ""
+        data = row[0]  # VARIANT -> dict/json
+        if isinstance(data, dict):
+            return data.get("secret_string") or data.get("password") or ""
+        if isinstance(data, str):
+            try:
+                d = json.loads(data)
+                return d.get("secret_string") or d.get("password") or ""
+            except Exception:
+                return ""
+        try:
+            d = dict(data)
+            return d.get("secret_string") or d.get("password") or ""
+        except Exception:
+            return ""
     except Exception:
         return ""
 
-def _get_secret(name: str, default: str = "") -> str:
-    # prioridade: st.secrets -> env var
-    return _SECRETS.get(name, _get_env(name, default))
+def resolve_value(name: str, default: str = "", snowflake_fqn_env: str | None = None, snowflake_fqn_default: str | None = None) -> str:
+    # 1) ENV
+    val = _get_env(name, "")
+    if val:
+        return val
+    # 2) st.secrets
+    val = _get_from_streamlit_secrets(name)
+    if val:
+        return val
+    # 3) Snowflake Secret
+    fqn = _get_env(snowflake_fqn_env or f"{name}_FQN", snowflake_fqn_default or "")
+    if fqn:
+        val = _get_from_snowflake_secret(fqn)
+        if val:
+            return val
+    return default
 
-# FQN do secret no Snowflake (ajuste conforme você criou no SQL)
-DEFAULT_OPENAI_SECRET_FQN = _get_env("OPENAI_SECRET_FQN", "SECURE_CFG.SECRETS.OPENAI_API")
+# ========== Config do app ==========
+# Modelo fixo em código — altere aqui quando quiser mudar
+DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 
 @dataclass(frozen=True)
 class Settings:
-    # tenta primeiro UI/ENV; se vazio, busca no Snowflake Secret
-    OPENAI_API_KEY: str = ""  # preenchido abaixo
-    OPENAI_MODEL: str = _get_secret("OPENAI_MODEL", "gpt-4.1-mini")
+    OPENAI_API_KEY: str
+    OPENAI_MODEL: str
 
-# instancia e resolve API key
-settings = Settings()
-if not settings.OPENAI_API_KEY:
-    # 1) tenta st.secrets / env
-    api_key = _get_secret("OPENAI_API_KEY", "")
-    # 2) se não tiver, busca no Snowflake Secret
-    if not api_key:
-        api_key = _get_from_snowflake_secret(DEFAULT_OPENAI_SECRET_FQN)
-    # reconstroi Settings com a chave resolvida
-    settings = Settings(OPENAI_API_KEY=api_key, OPENAI_MODEL=settings.OPENAI_MODEL)
+def get_settings() -> Settings:
+    # Se você criou o secret com outro FQN, ajuste abaixo ou defina OPENAI_SECRET_FQN no app
+    default_openai_fqn = os.getenv("OPENAI_SECRET_FQN", "SECURE_CFG.SECRETS.OPENAI_API")
+    api_key = resolve_value("OPENAI_API_KEY", default="", snowflake_fqn_default=default_openai_fqn)
+    return Settings(
+        OPENAI_API_KEY=api_key,
+        OPENAI_MODEL=DEFAULT_OPENAI_MODEL,  # fixo
+    )
+
+settings = get_settings()
