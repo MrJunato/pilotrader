@@ -33,12 +33,7 @@ data_source = st.sidebar.selectbox(
 uploaded_df = None
 offers_df = None
 
-if data_source == "Upload CSV (time & sales)":
-    uploaded_file = st.sidebar.file_uploader("Envie CSV time & sales (colunas: timestamp,price,volume,side)", type=["csv"])
-    if uploaded_file:
-        uploaded_df = load_csv_ts(uploaded_file)
-        st.sidebar.success(f"CSV carregado: {uploaded_df.shape[0]} linhas")
-elif data_source == "Upload Excel (Profit Times in Trade)":
+if data_source == "Upload Excel (Profit Times in Trade)":
     excel_file = st.sidebar.file_uploader("Envie XLSX do Profit (abas: ofertas, negocios)", type=["xlsx"])
     if excel_file:
         try:
@@ -48,6 +43,11 @@ elif data_source == "Upload Excel (Profit Times in Trade)":
             st.sidebar.success(f"XLSX carregado: {uploaded_df.shape[0]} negócios")
         except Exception as e:
             st.sidebar.error(f"Falha ao ler XLSX do Profit: {e}")
+elif data_source == "Upload CSV (time & sales)":
+    uploaded_file = st.sidebar.file_uploader("Envie CSV time & sales (colunas: timestamp,price,volume,side)", type=["csv"])
+    if uploaded_file:
+        uploaded_df = load_csv_ts(uploaded_file)
+        st.sidebar.success(f"CSV carregado: {uploaded_df.shape[0]} linhas")
 else:
     st.sidebar.info("WebSocket: inserir código do provedor e credenciais aqui. Atualmente é um placeholder.")
 
