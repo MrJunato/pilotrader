@@ -3,14 +3,17 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-from tape_gpt.config import settings
+from tape_gpt.config import get_settings
 from tape_gpt.data.loaders import load_csv_ts, parse_profit_excel
 from tape_gpt.data.preprocess import preprocess_ts, compute_imbalances
 from tape_gpt.viz.charts import candle_volume_figure, buy_sell_imbalance_figures
 from tape_gpt.chat.prompts import build_system_prompt, assemble_messages
-from tape_gpt.chat.client import get_openai_client, call_openai
+from tape_gpt.chat.client import call_llm
 
 st.set_page_config(page_title="TapeGPT — Chatbot Tape Reading & TA", layout="wide")
+
+# Config
+settings = get_settings()
 
 # Cabeçalho
 st.title("TapeGPT — Chatbot de Tape Reading e Análise Técnica (Day Trade)")
@@ -18,6 +21,7 @@ st.markdown("""
 **Atenção:** Esta ferramenta é apenas para suporte à decisão. Não há garantias de resultado.
 Teste em conta demo / backtest antes de operar ao vivo.
 """)
+st.caption(f"Provider LLM: {settings.PROVIDER}  |  Modelo: {settings.MODEL}")
 
 # Sidebar: upload / conexões
 st.sidebar.header("Dados de mercado")
@@ -102,15 +106,15 @@ for turn in st.session_state.chat_history[-max_history:]:
 user_input = st.chat_input("Digite sua mensagem e pressione Enter...")
 
 if user_input:
-    if not settings.OPENAI_API_KEY:
-        st.error("Defina OPENAI_API_KEY como variável de ambiente antes de rodar.")
+    # Só exige API key se provider for OpenAI
+    if settings.PROVIDER == "openai" and not settings.OPENAI_API_KEY:
+        st.error("Defina OPENAI_API_KEY (env/secrets) para usar provider=openai.")
     elif not user_input.strip():
         st.warning("Escreva uma pergunta.")
     else:
         df_text = None
         if uploaded_df is not None:
             try:
-                # inclui até 10k chars com últimos negócios
                 last = uploaded_df.tail(200).to_csv(index=False)
                 df_text = "Últimos trades (CSV heads):\n" + last[:10000]
             except Exception:
@@ -120,10 +124,9 @@ if user_input:
 
         with st.spinner("Consultando modelo..."):
             try:
-                client = get_openai_client()
-                assistant_text = call_openai(client, model=settings.OPENAI_MODEL, messages=messages)
+                assistant_text = call_llm(settings, messages)
             except Exception as e:
-                st.error(f"Erro ao chamar a API: {e}")
+                st.error(f"Erro ao chamar o modelo: {e}")
                 assistant_text = None
 
         if assistant_text:
