@@ -1,26 +1,59 @@
 # file: tape_gpt/chat/prompts.py
 from typing import List, Dict, Optional
 
-def build_system_prompt(market: str = "índice") -> str:
-    return (
-        "Você é um especialista em tape reading (time & sales / order flow) e análise técnica intraday "
-        "focado em mercados de índice (futuros e/ou CFDs). Responda de forma objetiva, com passos acionáveis, "
-        "destaque níveis de suporte/resistência detectados, explique sinais no tape (grandes prints, agressividade "
-        "de compradores/vendedores, imbalances) e conecte com contextos de price action e micro-estrutura. "
-        "Sempre inclua: (1) resumo em 1-2 linhas, (2) sinais observados (o que no tape levou à conclusão), "
-        "(3) possíveis trade ideas com gerenciamento de risco (stop e target), e (4) notas sobre incertezas. "
-        "Não forneça garantias de resultado. Seja conservador e peça mais dados se necessário."
+def build_system_prompt(market: str = "índice", rule_based_summary: Optional[str] = None, main_signal: Optional[dict] = None) -> str:
+    base = (
+        "Você é um especialista em tape reading (leitura do fluxo de ordens) e análise técnica intraday, "
+        "focado em mercados de índice (futuros e/ou CFDs). "
+        "Seu objetivo é ajudar o usuário a entender o cenário de mercado de forma simples, didática e acessível, "
+        "evitando termos técnicos sempre que possível. Se precisar usar termos técnicos, explique o significado de forma clara e curta. "
+        "Sempre priorize a proteção do usuário contra perdas e oriente para decisões conservadoras. "
+        "Responda com passos práticos e linguagem fácil, como se estivesse explicando para alguém iniciante. "
     )
+    if main_signal:
+        base += (
+            f"\n\nResumo visual da análise automática: {main_signal.get('icon','')} {main_signal.get('label','')} — {main_signal.get('help','')}"
+        )
+    if rule_based_summary:
+        base += (
+            f"\n\nResumo detalhado da análise automática:\n{rule_based_summary}"
+        )
+    base += (
+        "\n\nSempre inclua: (1) resumo em 1-2 frases simples, (2) sinais observados (explique o que significa), "
+        "(3) possíveis ideias de operação com foco em evitar perdas, e (4) notas sobre incertezas. "
+        "Se o usuário perguntar algo, responda de forma didática e sem jargões, explicando o que for necessário."
+    )
+    return base
 
-def assemble_messages(user_text: str, df_sample_text: Optional[str] = None, system_prompt: Optional[str] = None) -> List[Dict]:
-    system = system_prompt or build_system_prompt()
-    messages = [{"role":"system","content":system}]
+def assemble_messages(
+    user_text: str,
+    df_sample_text: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+    rule_based: Optional[dict] = None
+) -> List[Dict]:
+    # Monta o prompt do sistema com dados do rule_based se disponíveis
+    if rule_based:
+        system = build_system_prompt(
+            rule_based_summary=rule_based.get("summary"),
+            main_signal=rule_based.get("main_signal")
+        )
+    else:
+        system = system_prompt or build_system_prompt()
+    messages = [{"role": "system", "content": system}]
     few_shot = [
-        {"role":"user","content":"Resumo rápido do tape: houve um print grande comprador no topo da faixa, mas sem follow-through."},
-        {"role":"assistant","content":"Resumo: Indecisão; sinal de possível exaustão de venda. Sinais: grande print comprador (volume elevado) numa resistência, mas sem sustentação. Trade idea: esperar pullback para avaliar entradas conservadoras; stop acima do pico do print. Incertezas: não houve confirmação em candles subsequentes."}
+        {"role": "user", "content": "Resumo rápido do tape: houve um print grande comprador no topo da faixa, mas sem follow-through."},
+        {"role": "assistant", "content": "Resumo: Mercado mostrou indecisão, pode ser sinal de exaustão de venda. Sinais: grande negócio de compra (volume alto) numa região de resistência, mas sem continuidade. Ideia: esperar o preço cair um pouco antes de pensar em comprar; sempre use stop-loss. Incerteza: não houve confirmação em candles seguintes. (Obs: 'print grande' significa um negócio de volume muito acima da média, geralmente feito por participantes grandes.)"}
     ]
     messages += few_shot
+    if rule_based:
+        # Inclui sinais e níveis relevantes do rule_based
+        if rule_based.get("levels"):
+            levels = ", ".join([f"{t}: {v:.2f}" for t, v in rule_based["levels"]])
+            messages.append({"role": "system", "content": f"Níveis importantes detectados: {levels}"})
+        if rule_based.get("big_prints"):
+            bp = rule_based["big_prints"][-1]
+            messages.append({"role": "system", "content": f"Negócio grande recente: {bp['side']} volume={bp['volume']:.0f} @ {bp['price']:.2f} ({bp['ts']})"})
     if df_sample_text:
-        messages.append({"role":"user","content":"Aqui estão exemplos de leituras do tape:\n" + df_sample_text})
-    messages.append({"role":"user","content": user_text})
+        messages.append({"role": "user", "content": "Aqui estão exemplos de leituras do tape:\n" + df_sample_text})
+    messages.append({"role": "user", "content": user_text})
     return messages

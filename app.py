@@ -9,6 +9,7 @@ from tape_gpt.data.preprocess import preprocess_ts, compute_imbalances
 from tape_gpt.viz.charts import candle_volume_figure, buy_sell_imbalance_figures
 from tape_gpt.chat.prompts import build_system_prompt, assemble_messages
 from tape_gpt.chat.client import call_openai
+from tape_gpt.chat.rule_based import analyze_tape, render_response
 
 st.set_page_config(page_title="TapeGPT — Chatbot Tape Reading & TA", layout="wide")
 
@@ -53,22 +54,59 @@ imbs = None
 if uploaded_df is not None:
     df = preprocess_ts(uploaded_df)
 
-    st.subheader("Amostra dos dados (time & sales)")
-    st.dataframe(df.head(200))
-
-    if offers_df is not None and len(offers_df) > 0:
-        with st.expander("Amostra da aba 'ofertas' (normalizada)"):
-            st.dataframe(offers_df.head(50))
-
     agg_unit = st.selectbox("Agregação para plot (resolução)", ["1s","5s","15s","1min"])
     freq = agg_unit
 
-    # Candles + Volume
+    # --- Nova análise automática pela IA (rule_based) ---
+    insights = analyze_tape(df, imbs, freq=freq)
+
+    # --- Indicador visual principal antes dos gráficos ---
+    def main_signal_indicator(insights):
+        trend = insights.get("trend", "indefinida")
+        reversal = insights.get("reversal_detected", False)
+        imb = insights.get("imb_last", 0.0)
+        # Definição do status
+        if trend == "alta" and imb > 0.1 and not reversal:
+            label = "Possível Alta"
+            color = "green"
+            icon = "⬆️"
+            help_text = "O tape reading indica tendência de alta. Evite comprar no topo, prefira esperar correções."
+        elif trend == "baixa" and imb < -0.1 and not reversal:
+            label = "Possível Queda"
+            color = "red"
+            icon = "⬇️"
+            help_text = "O tape reading indica tendência de baixa. Evite operar comprado, prefira esperar repiques."
+        elif reversal:
+            label = "Atenção: Possível Reversão"
+            color = "orange"
+            icon = "⚠️"
+            help_text = "Há sinais de reversão. Evite operar até o mercado mostrar direção clara."
+        elif trend == "lateral":
+            label = "Estagnação / Lateralização"
+            color = "gray"
+            icon = "⏸️"
+            help_text = "Mercado sem direção clara. O melhor é não operar ou usar posições pequenas."
+        else:
+            label = "Cenário Indefinido"
+            color = "gray"
+            icon = "❔"
+            help_text = "Não há sinais claros no tape reading. Prefira não operar."
+        st.markdown(
+            f"<div style='border-radius:8px;padding:16px;background-color:{'rgba(0,200,0,0.08)' if color=='green' else 'rgba(200,0,0,0.08)' if color=='red' else 'rgba(255,165,0,0.08)' if color=='orange' else '#f0f0f0'};display:flex;align-items:center;'>"
+            f"<span style='font-size:2em;margin-right:16px'>{icon}</span>"
+            f"<span style='font-size:1.3em;font-weight:bold;color:{color}'>{label}</span>"
+            f"</div>"
+            f"<div style='font-size:1em;color:#666;margin-top:4px'>{help_text}</div>",
+            unsafe_allow_html=True
+        )
+
+    main_signal_indicator(insights)
+
+    # --- Gráficos ---
     fig_candle = candle_volume_figure(df, freq=freq)
     st.subheader("Gráfico de candles (agregação) e volume")
     st.plotly_chart(fig_candle, use_container_width=True)
 
-    # Buy/Sell + Imbalance
     imbs = compute_imbalances(df, window=freq)
     fig_bs, fig_imb = buy_sell_imbalance_figures(imbs)
     col1, col2 = st.columns(2)
@@ -78,6 +116,9 @@ if uploaded_df is not None:
     with col2:
         st.subheader("Imbalance")
         st.plotly_chart(fig_imb, use_container_width=True)
+
+    st.subheader("Análise automática (heurística) dos dados")
+    st.markdown(render_response(insights))
 
 else:
     st.info("Carregue um XLSX do Profit para começar.")
