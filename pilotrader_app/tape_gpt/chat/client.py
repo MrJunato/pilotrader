@@ -5,7 +5,7 @@ from tape_gpt.config import settings
 
 def get_openai_client() -> OpenAI:
     if not settings.OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY não definido.")
+        raise RuntimeError("OPENAI_API_KEY não definido (verifique o Secret no Snowflake).")
     return OpenAI(api_key=settings.OPENAI_API_KEY)
 
 def call_openai(client: OpenAI, model: str, messages: List[Dict], max_tokens: int = 800, temperature: float = 0.1) -> str:
