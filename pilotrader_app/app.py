@@ -5,15 +5,18 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
-import openai
-import json
+import plotly.graph_objects as go
+import re
 # opcional: websocket client para conexão com feed de mercado (placeholder)
 # from websocket import create_connection
 
 # === Config ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # você pode trocar
-openai.api_key = OPENAI_API_KEY
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")  # você pode trocar
+
+# Atualização para nova API OpenAI
+from openai import OpenAI
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 st.set_page_config(page_title="TapeGPT — Chatbot Tape Reading & TA", layout="wide")
 
@@ -59,7 +62,6 @@ if uploaded_df is not None:
     st.subheader("Amostra dos dados (time & sales)")
     st.dataframe(df.head(200))
 
-    # simples agregação intraday por segundo/minuto
     agg_unit = st.selectbox("Agregação para plot (resolução)", ["1s","5s","15s","1min"])
     if agg_unit.endswith("s"):
         freq = agg_unit
@@ -67,33 +69,88 @@ if uploaded_df is not None:
         freq = agg_unit
 
     df.set_index("timestamp", inplace=True)
-    # agregando: OHLC de ticks agrupados e volume
     ohlc = df["price"].resample(freq).ohlc()
     vol = df["volume"].resample(freq).sum()
     merged = ohlc.join(vol)
 
-    st.subheader("Gráfico de candles (agregação) e volume")
-    fig, ax = plt.subplots(figsize=(10,4))
-    ax.plot(merged.index, merged['close'], label='close')  # gráfico simples
-    ax.set_title("Preço (close) — agregação " + freq)
-    ax.set_xlabel("Tempo")
-    ax.set_ylabel("Preço")
-    st.pyplot(fig)
+    col1, col2 = st.columns([2, 1])
 
-    # quick order-flow heuristics
-    st.subheader("Indicadores rápidos de Order Flow")
-    # exemplo: trade imbalance por janela
-    def compute_imbalances(df, window='1min'):
-        vbuy = df[df['side'].str.lower()=="buy"].volume.resample(window).sum().fillna(0)
-        vsell = df[df['side'].str.lower()=="sell"].volume.resample(window).sum().fillna(0)
-        imbalance = (vbuy - vsell) / (vbuy + vsell + 1e-9)
-        return pd.DataFrame({"vbuy":vbuy, "vsell":vsell, "imbalance":imbalance})
-    try:
-        imbs = compute_imbalances(df, window=freq)
-        st.line_chart(imbs[["vbuy","vsell"]])
-        st.line_chart(imbs["imbalance"])
-    except Exception as e:
-        st.warning("Não foi possível calcular imbalances: " + str(e))
+    with col1:
+        st.subheader("Gráfico de candles (agregação) e volume")
+        # Gráfico interativo de candles + volume
+        fig_candle = go.Figure()
+        fig_candle.add_trace(go.Candlestick(
+            x=merged.index,
+            open=merged['open'],
+            high=merged['high'],
+            low=merged['low'],
+            close=merged['close'],
+            name='Candles'
+        ))
+        fig_candle.add_trace(go.Bar(
+            x=merged.index,
+            y=merged['volume'],
+            name='Volume',
+            marker_color='rgba(0,0,255,0.2)',
+            yaxis='y2'
+        ))
+        fig_candle.update_layout(
+            xaxis_title="Tempo",
+            yaxis_title="Preço",
+            yaxis2=dict(
+                title="Volume",
+                overlaying='y',
+                side='right',
+                showgrid=False
+            ),
+            legend=dict(orientation="h"),
+            height=350,
+            margin=dict(l=10, r=10, t=30, b=10)
+        )
+        st.plotly_chart(fig_candle, use_container_width=True)
+
+    with col2:
+        st.subheader("Indicadores rápidos de Order Flow")
+        # exemplo: trade imbalance por janela
+        def compute_imbalances(df, window='1min'):
+            vbuy = df[df['side'].str.lower()=="buy"].volume.resample(window).sum().fillna(0)
+            vsell = df[df['side'].str.lower()=="sell"].volume.resample(window).sum().fillna(0)
+            imbalance = (vbuy - vsell) / (vbuy + vsell + 1e-9)
+            return pd.DataFrame({"vbuy":vbuy, "vsell":vsell, "imbalance":imbalance})
+        try:
+            imbs = compute_imbalances(df, window=freq)
+            st.markdown("**Volume Buy/Sell**")
+            # Gráfico interativo de Buy/Sell
+            fig_bs = go.Figure()
+            fig_bs.add_trace(go.Scatter(
+                x=imbs.index, y=imbs["vbuy"], mode="lines", name="Buy", line=dict(color="green")
+            ))
+            fig_bs.add_trace(go.Scatter(
+                x=imbs.index, y=imbs["vsell"], mode="lines", name="Sell", line=dict(color="red")
+            ))
+            fig_bs.update_layout(
+                xaxis_title="Tempo",
+                yaxis_title="Volume",
+                legend=dict(orientation="h"),
+                height=200,
+                margin=dict(l=10, r=10, t=30, b=10)
+            )
+            st.plotly_chart(fig_bs, use_container_width=True)
+
+            st.markdown("**Imbalance**")
+            fig_imb = go.Figure()
+            fig_imb.add_trace(go.Scatter(
+                x=imbs.index, y=imbs["imbalance"], mode="lines", name="Imbalance", line=dict(color="purple")
+            ))
+            fig_imb.update_layout(
+                xaxis_title="Tempo",
+                yaxis_title="Imbalance",
+                height=200,
+                margin=dict(l=10, r=10, t=30, b=10)
+            )
+            st.plotly_chart(fig_imb, use_container_width=True)
+        except Exception as e:
+            st.warning("Não foi possível calcular imbalances: " + str(e))
 
 else:
     st.info("Carregue um CSV de Time & Sales para começar.")
@@ -132,47 +189,52 @@ def assemble_messages(user_text, df_sample_text=None):
     messages.append({"role":"user","content": user_text})
     return messages
 
-# widget para entrada de texto do usuário
+# Nova interface de chat
+st.markdown('---')
 st.subheader("Chat — pergunte ao especialista")
-user_input = st.text_area("Descreva o que você quer que o bot analise (ex.: 'analisar últimos 5 minutos do tape pra sinais de reversão')", height=120)
-if st.button("Enviar para o modelo"):
+
+# Exibe o histórico de chat como uma tela de chat
+for turn in st.session_state.chat_history[-max_history:]:
+    with st.chat_message("user"):
+        st.markdown(f"**{user_name}:** {turn['user']}")
+    with st.chat_message("assistant"):
+        st.markdown(f"**TapeGPT:** {turn['assistant']}")
+
+# Campo de entrada de mensagem estilo chat
+user_input = st.chat_input("Digite sua mensagem e pressione Enter...")
+
+if user_input:
     if not OPENAI_API_KEY:
         st.error("Defina OPENAI_API_KEY como variável de ambiente antes de rodar.")
     elif not user_input.strip():
         st.warning("Escreva uma pergunta.")
     else:
-        # opcional: anexar pequeno resumo dos dados carregados ao prompt
         df_text = None
         if uploaded_df is not None:
-            # cria um resumo curto (últimos N trades)
             last = uploaded_df.tail(200).to_csv(index=False)
-            df_text = "Últimos trades (CSV heads):\n" + last[:10000]  # limita
+            df_text = "Últimos trades (CSV heads):\n" + last[:10000]
         messages = assemble_messages(user_input, df_text)
         with st.spinner("Consultando modelo..."):
             try:
-                resp = openai.ChatCompletion.create(
+                resp = client.chat.completions.create(
                     model=OPENAI_MODEL,
                     messages=messages,
                     max_tokens=800,
                     temperature=0.1,
                 )
-                assistant_text = resp["choices"][0]["message"]["content"]
+                assistant_text = resp.choices[0].message.content
             except Exception as e:
                 st.error("Erro ao chamar a API OpenAI: " + str(e))
                 assistant_text = None
 
         if assistant_text:
-            st.session_state.chat_history.append({"user":user_input, "assistant":assistant_text, "time": datetime.utcnow().isoformat()})
-            st.markdown("**Resposta do modelo:**")
-            st.write(assistant_text)
-
-# Mostrar histórico
-if st.session_state.chat_history:
-    st.subheader("Histórico de conversas (sessão)")
-    for i,turn in enumerate(reversed(st.session_state.chat_history[-max_history:])):
-        st.markdown(f"**Você:** {turn['user']}")
-        st.markdown(f"**Modelo:** {turn['assistant']}")
-        st.write("---")
+            st.session_state.chat_history.append({
+                "user": user_input,
+                "assistant": assistant_text,
+                "time": datetime.utcnow().isoformat()
+            })
+            # Atualiza a tela para mostrar a nova mensagem
+            st.rerun()
 
 # Footer / download de exemplo
 st.markdown("---")
