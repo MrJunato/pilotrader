@@ -29,18 +29,13 @@ st.caption(f"Modelo: {settings.OPENAI_MODEL}")
 st.sidebar.header("Dados de mercado")
 data_source = st.sidebar.selectbox(
     "Fonte de dados",
-    ["Upload CSV (time & sales)", "Upload Excel (Profit Times in Trade)", "Conexão WebSocket (placeholder)"]
+    ["Upload Excel (Profit Times in Trade)", "Conexão WebSocket (placeholder)"]
 )
 
 uploaded_df = None
 offers_df = None
 
-if data_source == "Upload CSV (time & sales)":
-    uploaded_file = st.sidebar.file_uploader("Envie CSV time & sales (colunas: timestamp,price,volume,side)", type=["csv"])
-    if uploaded_file:
-        uploaded_df = load_csv_ts(uploaded_file)
-        st.sidebar.success(f"CSV carregado: {uploaded_df.shape[0]} linhas")
-elif data_source == "Upload Excel (Profit Times in Trade)":
+if data_source == "Upload Excel (Profit Times in Trade)":
     excel_file = st.sidebar.file_uploader("Envie XLSX do Profit (abas: ofertas, negocios)", type=["xlsx"])
     if excel_file:
         try:
@@ -85,7 +80,7 @@ if uploaded_df is not None:
         st.plotly_chart(fig_imb, use_container_width=True)
 
 else:
-    st.info("Carregue um CSV de Time & Sales ou um XLSX do Profit para começar.")
+    st.info("Carregue um XLSX do Profit para começar.")
 
 # === Chat interface ===
 st.sidebar.header("Chatbot")
@@ -143,4 +138,4 @@ if user_input:
 
 # Footer
 st.markdown("---")
-st.markdown("Entrada esperada: CSV com colunas `timestamp,price,volume,side` ou XLSX do Profit (abas `ofertas` e `negocios`).")
+st.markdown("Entrada esperada: XLSX do Profit (abas `ofertas` e `negocios`).")
