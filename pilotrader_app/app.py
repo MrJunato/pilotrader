@@ -9,6 +9,7 @@ from tape_gpt.data.preprocess import preprocess_ts, compute_imbalances
 from tape_gpt.viz.charts import candle_volume_figure, buy_sell_imbalance_figures
 from tape_gpt.chat.prompts import build_system_prompt, assemble_messages
 from tape_gpt.chat.client import call_llm
+from tape_gpt.chat.rule_based import analyze_tape, render_response
 
 st.set_page_config(page_title="TapeGPT — Chatbot Tape Reading & TA", layout="wide")
 
@@ -21,7 +22,7 @@ st.markdown("""
 **Atenção:** Esta ferramenta é apenas para suporte à decisão. Não há garantias de resultado.
 Teste em conta demo / backtest antes de operar ao vivo.
 """)
-st.caption(f"Provider LLM: {settings.PROVIDER}  |  Modelo: {settings.MODEL}")
+st.caption(f"LLM Provider: {settings.PROVIDER}{' (sem chamadas externas)' if settings.PROVIDER=='disabled' else ''}")
 
 # Sidebar: upload / conexões
 st.sidebar.header("Dados de mercado")
@@ -33,7 +34,12 @@ data_source = st.sidebar.selectbox(
 uploaded_df = None
 offers_df = None
 
-if data_source == "Upload Excel (Profit Times in Trade)":
+if data_source == "Upload CSV (time & sales)":
+    uploaded_file = st.sidebar.file_uploader("Envie CSV time & sales (colunas: timestamp,price,volume,side)", type=["csv"])
+    if uploaded_file:
+        uploaded_df = load_csv_ts(uploaded_file)
+        st.sidebar.success(f"CSV carregado: {uploaded_df.shape[0]} linhas")
+elif data_source == "Upload Excel (Profit Times in Trade)":
     excel_file = st.sidebar.file_uploader("Envie XLSX do Profit (abas: ofertas, negocios)", type=["xlsx"])
     if excel_file:
         try:
@@ -43,15 +49,12 @@ if data_source == "Upload Excel (Profit Times in Trade)":
             st.sidebar.success(f"XLSX carregado: {uploaded_df.shape[0]} negócios")
         except Exception as e:
             st.sidebar.error(f"Falha ao ler XLSX do Profit: {e}")
-elif data_source == "Upload CSV (time & sales)":
-    uploaded_file = st.sidebar.file_uploader("Envie CSV time & sales (colunas: timestamp,price,volume,side)", type=["csv"])
-    if uploaded_file:
-        uploaded_df = load_csv_ts(uploaded_file)
-        st.sidebar.success(f"CSV carregado: {uploaded_df.shape[0]} linhas")
 else:
     st.sidebar.info("WebSocket: inserir código do provedor e credenciais aqui. Atualmente é um placeholder.")
 
 # Mostra / usa dados
+imbs = None
+freq = "1min"
 if uploaded_df is not None:
     df = preprocess_ts(uploaded_df)
 
@@ -106,10 +109,7 @@ for turn in st.session_state.chat_history[-max_history:]:
 user_input = st.chat_input("Digite sua mensagem e pressione Enter...")
 
 if user_input:
-    # Só exige API key se provider for OpenAI
-    if settings.PROVIDER == "openai" and not settings.OPENAI_API_KEY:
-        st.error("Defina OPENAI_API_KEY (env/secrets) para usar provider=openai.")
-    elif not user_input.strip():
+    if not user_input.strip():
         st.warning("Escreva uma pergunta.")
     else:
         df_text = None
@@ -120,14 +120,23 @@ if user_input:
             except Exception:
                 pass
 
-        messages = assemble_messages(user_input, df_sample_text=df_text, system_prompt=build_system_prompt())
-
-        with st.spinner("Consultando modelo..."):
-            try:
-                assistant_text = call_llm(settings, messages)
-            except Exception as e:
-                st.error(f"Erro ao chamar o modelo: {e}")
-                assistant_text = None
+        with st.spinner("Gerando resposta..."):
+            assistant_text = None
+            if settings.PROVIDER == "disabled":
+                # Modo heurístico (sem LLM)
+                if uploaded_df is None:
+                    assistant_text = "Forneça dados (CSV/XLSX) para análise heurística sem LLM."
+                else:
+                    insights = analyze_tape(df, imbs, freq=freq)
+                    assistant_text = render_response(insights, user_text=user_input)
+            else:
+                # Modo LLM (OpenAI) — fora do Snowflake ou com acesso externo habilitado
+                try:
+                    messages = assemble_messages(user_input, df_sample_text=df_text, system_prompt=build_system_prompt())
+                    assistant_text = call_llm(settings, messages)
+                except Exception as e:
+                    st.error(f"Erro ao chamar o modelo: {e}")
+                    assistant_text = None
 
         if assistant_text:
             st.session_state.chat_history.append({
