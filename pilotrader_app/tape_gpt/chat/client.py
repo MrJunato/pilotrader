@@ -1,9 +1,11 @@
 # file: tape_gpt/chat/client.py
-# (mantém o suporte a OpenAI para uso fora do Snowflake; não chama nada externo quando provider=disabled)
 from typing import List, Dict
-from tape_gpt.config import Settings
 
 def _render_messages_as_text(messages: List[Dict]) -> str:
+    """
+    Converte [{'role':..., 'content':...}] em um prompt textual único,
+    adequado para a OpenAI Responses API.
+    """
     parts = []
     for m in messages:
         role = m.get("role", "user")
@@ -12,24 +14,23 @@ def _render_messages_as_text(messages: List[Dict]) -> str:
     parts.append("ASSISTANT:")
     return "\n\n".join(parts)
 
-def call_llm(settings: Settings, messages: List[Dict], max_tokens: int = 800, temperature: float = 0.1) -> str:
-    if settings.PROVIDER == "disabled":
-        raise RuntimeError("LLM está desativado (provider=disabled).")
-    elif settings.PROVIDER == "openai":
-        if not settings.OPENAI_API_KEY:
-            raise RuntimeError("OPENAI_API_KEY não definido para provider=openai.")
-        try:
-            from openai import OpenAI
-        except ImportError as e:
-            raise RuntimeError("Pacote 'openai' não instalado. pip install openai") from e
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        prompt = _render_messages_as_text(messages)
-        resp = client.responses.create(
-            model=settings.OPENAI_MODEL,
-            input=prompt,
-            max_output_tokens=max_tokens,
-            temperature=temperature,
-        )
-        return resp.output_text
-    else:
-        raise ValueError(f"Provider desconhecido: {settings.PROVIDER}")
+def call_openai(api_key: str, model: str, messages: List[Dict], max_output_tokens: int = 800, temperature: float = 0.1) -> str:
+    """
+    Chama a OpenAI usando a Responses API (recomendado p/ gpt-4.1-mini).
+    """
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY não definido.")
+    try:
+        from openai import OpenAI
+    except ImportError as e:
+        raise RuntimeError("Pacote 'openai' não instalado. Execute: pip install openai") from e
+
+    client = OpenAI(api_key=api_key)
+    prompt = _render_messages_as_text(messages)
+    resp = client.responses.create(
+        model=model,
+        input=prompt,
+        max_output_tokens=max_output_tokens,
+        temperature=temperature,
+    )
+    return resp.output_text

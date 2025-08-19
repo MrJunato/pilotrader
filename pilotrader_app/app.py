@@ -3,18 +3,19 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-from tape_gpt.config import get_settings
+from tape_gpt.config import get_settings, require_openai_api_key
 from tape_gpt.data.loaders import load_csv_ts, parse_profit_excel
 from tape_gpt.data.preprocess import preprocess_ts, compute_imbalances
 from tape_gpt.viz.charts import candle_volume_figure, buy_sell_imbalance_figures
 from tape_gpt.chat.prompts import build_system_prompt, assemble_messages
-from tape_gpt.chat.client import call_llm
-from tape_gpt.chat.rule_based import analyze_tape, render_response
+from tape_gpt.chat.client import call_openai
 
 st.set_page_config(page_title="TapeGPT — Chatbot Tape Reading & TA", layout="wide")
 
 # Config
 settings = get_settings()
+# Se a chave não estiver definida em env/secrets, pede via UI
+openai_api_key = settings.OPENAI_API_KEY or require_openai_api_key()
 
 # Cabeçalho
 st.title("TapeGPT — Chatbot de Tape Reading e Análise Técnica (Day Trade)")
@@ -22,7 +23,7 @@ st.markdown("""
 **Atenção:** Esta ferramenta é apenas para suporte à decisão. Não há garantias de resultado.
 Teste em conta demo / backtest antes de operar ao vivo.
 """)
-st.caption(f"LLM Provider: {settings.PROVIDER}{' (sem chamadas externas)' if settings.PROVIDER=='disabled' else ''}")
+st.caption(f"Modelo: {settings.OPENAI_MODEL}")
 
 # Sidebar: upload / conexões
 st.sidebar.header("Dados de mercado")
@@ -54,7 +55,6 @@ else:
 
 # Mostra / usa dados
 imbs = None
-freq = "1min"
 if uploaded_df is not None:
     df = preprocess_ts(uploaded_df)
 
@@ -120,23 +120,18 @@ if user_input:
             except Exception:
                 pass
 
-        with st.spinner("Gerando resposta..."):
-            assistant_text = None
-            if settings.PROVIDER == "disabled":
-                # Modo heurístico (sem LLM)
-                if uploaded_df is None:
-                    assistant_text = "Forneça dados (CSV/XLSX) para análise heurística sem LLM."
-                else:
-                    insights = analyze_tape(df, imbs, freq=freq)
-                    assistant_text = render_response(insights, user_text=user_input)
-            else:
-                # Modo LLM (OpenAI) — fora do Snowflake ou com acesso externo habilitado
-                try:
-                    messages = assemble_messages(user_input, df_sample_text=df_text, system_prompt=build_system_prompt())
-                    assistant_text = call_llm(settings, messages)
-                except Exception as e:
-                    st.error(f"Erro ao chamar o modelo: {e}")
-                    assistant_text = None
+        messages = assemble_messages(user_input, df_sample_text=df_text, system_prompt=build_system_prompt())
+
+        with st.spinner("Consultando modelo..."):
+            try:
+                assistant_text = call_openai(
+                    api_key=openai_api_key,
+                    model=settings.OPENAI_MODEL,
+                    messages=messages,
+                )
+            except Exception as e:
+                st.error(f"Erro ao chamar a API: {e}")
+                assistant_text = None
 
         if assistant_text:
             st.session_state.chat_history.append({
