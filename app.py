@@ -133,72 +133,84 @@ if user_input:
     if not user_input.strip():
         st.warning("Escreva uma pergunta.")
     else:
-        # 1) History curto para contexto local do AnswerAgent
-        history_msgs = []
-        for turn in st.session_state.chat_history[-max_history:]:
-            history_msgs.append({"role": "user", "content": turn["user"]})
-            history_msgs.append({"role": "assistant", "content": turn["assistant"]})
+        # 1) Exibe a mensagem do usuário imediatamente
+        with st.chat_message("user"):
+            st.markdown(f"**{user_name}:** {user_input}")
 
-        # 2) Amostra do DF (como antes)
-        df_text = None
-        if uploaded_df is not None:
-            try:
-                last = uploaded_df.tail(200).to_csv(index=False)
-                df_text = "Últimos trades (CSV heads):\n" + last[:10000]
-            except Exception:
-                pass
+        # 2) Prepara placeholder do assistente
+        with st.chat_message("assistant"):
+            msg_placeholder = st.empty()
 
-        # 3) Montar mensagens do AnswerAgent com multi-contexto:
-        #    - rule_based=insights (AnalyzerAgent)
-        #    - chat_summary (SummarizerAgent)
-        #    - history_msgs + df_text
-        messages = assemble_messages(
-            user_text=user_input,
-            df_sample_text=df_text,
-            rule_based=insights if uploaded_df is not None else None,
-            history=history_msgs,
-            chat_summary=st.session_state.chat_summary or None,
-        )
+            # 3) Prepara contexto, amostra do DF e mensagens (como antes)
+            history_msgs = []
+            for turn in st.session_state.chat_history[-max_history:]:
+                history_msgs.append({"role": "user", "content": turn["user"]})
+                history_msgs.append({"role": "assistant", "content": turn["assistant"]})
 
-        with st.spinner("Consultando modelo."):
-            try:
-                assistant_text = call_openai(
-                    api_key=openai_api_key,
-                    model=settings.OPENAI_MODEL,
-                    messages=messages,
+            df_text = None
+            if uploaded_df is not None:
+                try:
+                    last = uploaded_df.tail(200).to_csv(index=False)
+                    df_text = "Últimos trades (CSV heads):\n" + last[:10000]
+                except Exception:
+                    pass
+
+            messages = assemble_messages(
+                user_text=user_input,
+                df_sample_text=df_text,
+                rule_based=insights if uploaded_df is not None else None,
+                history=history_msgs,
+                chat_summary=st.session_state.chat_summary or None,
+            )
+
+            # 4) Chamada ao modelo com spinner (mantém “Consultando modelo.”)
+            with st.spinner("Consultando modelo."):
+                try:
+                    assistant_text = call_openai(
+                        api_key=openai_api_key,
+                        model=settings.OPENAI_MODEL,
+                        messages=messages,
+                    )
+                except Exception as e:
+                    st.error(f"Erro ao chamar a API: {e}")
+                    assistant_text = ""
+
+            # 5) Fallback se vier vazio — sempre mostrar algo na bolha
+            if not assistant_text or not assistant_text.strip():
+                assistant_text = (
+                    "Desculpe, o modelo não retornou conteúdo. "
+                    "Tente novamente em instantes ou ajuste o modelo nas configurações."
                 )
-            except Exception as e:
-                st.error(f"Erro ao chamar a API: {e}")
-                assistant_text = None
 
-        if assistant_text:
-            # 4) Persistir turno no histórico
-            st.session_state.chat_history.append({
-                "user": user_input,
-                "assistant": assistant_text,
-                "time": datetime.utcnow().isoformat()
-            })
+            # Mostra a resposta no placeholder
+            msg_placeholder.markdown(f"**TapeGPT:** {assistant_text}")
 
-            # 5) SummarizerAgent: atualiza a memória de longo prazo
-            try:
-                long_history = []
-                for turn in st.session_state.chat_history:
-                    long_history.append({"role": "user", "content": turn["user"]})
-                    long_history.append({"role": "assistant", "content": turn["assistant"]})
-                new_summary = summarize_chat(
-                    api_key=openai_api_key,
-                    model=settings.CHEAPER_MODEL,
-                    history=long_history,
-                    prior_summary=st.session_state.chat_summary or "",
-                    insights=insights if uploaded_df is not None else None,
-                    max_turns=12,  # controla custo do summarizer
-                )
-                if new_summary:
-                    st.session_state.chat_summary = new_summary
-            except Exception as e:
-                st.warning(f"Falha ao resumir a conversa: {e}")
+        # 6) Persistência no histórico e summarizer
+        st.session_state.chat_history.append({
+            "user": user_input,
+            "assistant": assistant_text,
+            "time": datetime.utcnow().isoformat()
+        })
 
-            st.rerun()
+        try:
+            long_history = []
+            for turn in st.session_state.chat_history:
+                long_history.append({"role": "user", "content": turn["user"]})
+                long_history.append({"role": "assistant", "content": turn["assistant"]})
+            new_summary = summarize_chat(
+                api_key=openai_api_key,
+                model=settings.CHEAPER_MODEL,
+                history=long_history,
+                prior_summary=st.session_state.chat_summary or "",
+                insights=insights if uploaded_df is not None else None,
+                max_turns=12,
+            )
+            if new_summary:
+                st.session_state.chat_summary = new_summary
+        except Exception as e:
+            st.warning(f"Falha ao resumir a conversa: {e}")
+
+        st.rerun()
 
 # Footer
 st.markdown("---")
