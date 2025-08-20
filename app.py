@@ -113,8 +113,11 @@ st.markdown('---')
 st.subheader("Chat — pergunte ao especialista")
 st.caption(f"Modelo: {settings.OPENAI_MODEL}")
 
-# Exibe histórico
+# Constrói histórico (últimos N turnos) como mensagens para o LLM
+history_msgs = []
 for turn in st.session_state.chat_history[-max_history:]:
+    history_msgs.append({"role": "user", "content": turn["user"]})
+    history_msgs.append({"role": "assistant", "content": turn["assistant"]})
     with st.chat_message("user"):
         st.markdown(f"**{user_name}:** {turn['user']}")
     with st.chat_message("assistant"):
@@ -135,7 +138,12 @@ if user_input:
             except Exception:
                 pass
 
-        messages = assemble_messages(user_input, df_sample_text=df_text, system_prompt=build_system_prompt())
+        messages = assemble_messages(
+            user_text=user_input,
+            df_sample_text=df_text,
+            rule_based=insights,               # injeta summary/main_signal/levels/prints grandes
+            history=history_msgs               # injeta últimos turnos do chat
+        )
 
         with st.spinner("Consultando modelo..."):
             try:
