@@ -2,8 +2,8 @@
 import os
 from dataclasses import dataclass
 
-DEFAULT_OPENAI_MODEL = "gpt-5-mini"  # modelo padrão para Responses API
-CHEAPER_OPENAI_MODEL = "gpt-5-nano"
+DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"  # modelo padrão para Responses API
+CHEAPER_OPENAI_MODEL = "gpt-4.1-nano"
 MAX_HISTORY = 8
 
 def _get_env(name: str, default: str = "") -> str:

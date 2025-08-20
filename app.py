@@ -114,7 +114,7 @@ if "chat_summary" not in st.session_state:
 
 st.markdown('---')
 st.subheader("Chat — pergunte ao especialista")
-st.caption(f"Modelo: {settings.OPENAI_MODEL}")
+st.caption(f"Modelo principal: {settings.OPENAI_MODEL}")
 
 # Constrói histórico (últimos N turnos) como mensagens para o LLM
 history_msgs = []
@@ -151,7 +151,7 @@ if user_input:
             if uploaded_df is not None:
                 try:
                     last = uploaded_df.tail(200).to_csv(index=False)
-                    df_text = "Últimos trades (CSV heads):\n" + last[:10000]
+                    df_text = "Últimos trades (CSV heads):\n" + last[:1000]
                 except Exception:
                     pass
 
@@ -177,6 +177,7 @@ if user_input:
 
             # 5) Fallback se vier vazio — sempre mostrar algo na bolha
             if not assistant_text or not assistant_text.strip():
+                st.error(f"Modelo '{settings.OPENAI_MODEL}' retornou resposta vazia (sem erro de API). Verifique modelo/SDK/parâmetros.")
                 assistant_text = (
                     "Desculpe, o modelo não retornou conteúdo. "
                     "Tente novamente em instantes ou ajuste o modelo nas configurações."

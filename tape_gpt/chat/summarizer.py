@@ -44,11 +44,13 @@ def summarize_chat(
     msgs.extend(h)
     msgs.append({"role": "user", "content": "Atualize o resumo da conversa seguindo as instruções acima."})
 
-    # Tenta temperature=0.2; se o modelo não suportar, o client re-tenta sem.
+    # Define temperatura condicional: None para gpt-5 (usa default=1), 0.2 para demais
+    temp = None if isinstance(model, str) and model.startswith("gpt-5") else 0.2
+
     return call_openai(
         api_key=api_key,
         model=model,
         messages=msgs,
         max_output_tokens=240,
-        temperature=0.2
+        temperature=temp
     )
