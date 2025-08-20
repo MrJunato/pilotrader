@@ -4,9 +4,11 @@ import pandas as pd
 from datetime import datetime
 from tape_gpt.viz.indicators import render_main_signal_indicator
 from tape_gpt.config import get_settings, require_openai_api_key
-from tape_gpt.data.loaders import load_csv_ts, parse_profit_excel
+from tape_gpt.data.loaders import parse_profit_excel
 from tape_gpt.data.preprocess import preprocess_ts, compute_imbalances
 from tape_gpt.viz.charts import candle_volume_figure, buy_sell_imbalance_figures
+from tape_gpt.viz.charts import top_aggressors_figure
+from tape_gpt.analysis.orderflow import top_aggressors
 from tape_gpt.chat.prompts import build_system_prompt, assemble_messages
 from tape_gpt.chat.client import call_openai
 from tape_gpt.analysis.rule_based import analyze_tape, render_response
@@ -56,16 +58,28 @@ if uploaded_df is not None:
     agg_unit = st.selectbox("Agregação para plot (resolução)", ["1s","5s","15s","1min"])
     freq = agg_unit
 
-    # 1) Calcular imbalances
+    # 1) Imbalances (agora com aggr_diff/total_volume)
     imbs = compute_imbalances(df, window=freq)
 
-    # 2) Usar analyze_tape com imbs para obter insights com main_signal
+    # 2) Análise heurística com pressão dos agressores
     insights = analyze_tape(df, imbs, freq=freq)
 
-    # 3) Renderizar indicador visual usando APENAS o main_signal retornado por analyze_tape
-    render_main_signal_indicator(insights.get("main_signal", {}))
+    # 2a) Top agressores (por agente) — usar DF “bruto” pois contém buyer/seller_agent 
+    lookback = st.selectbox("Janela Top Agressores", ["10min","30min","60min"], index=1)
+    try:
+        top_buy_df, top_sell_df = top_aggressors(uploaded_df, lookback=lookback, top_n=5)
+        fig_top = top_aggressors_figure(top_buy_df, top_sell_df)
+        # Injetar no insights listas resumidas para exibição textual
+        insights["top_buy_aggressors"] = list(zip(top_buy_df["agent"].tolist(), top_buy_df["volume"].tolist()))
+        insights["top_sell_aggressors"] = list(zip(top_sell_df["agent"].tolist(), top_sell_df["volume"].tolist()))
+    except Exception as e:
+        fig_top = None
+        st.warning(f"Falha ao calcular Top Agressores: {e}")
 
-    # --- Gráficos ---
+    # 3) Indicador principal
+    render_main_signal_indicator(insights.get("main_signal", {}))  # 
+
+    # 4) Gráficos
     fig_candle = candle_volume_figure(df, freq=freq)
     st.subheader("Gráfico de candles (agregação) e volume")
     st.plotly_chart(fig_candle, use_container_width=True)
@@ -79,8 +93,12 @@ if uploaded_df is not None:
         st.subheader("Imbalance")
         st.plotly_chart(fig_imb, use_container_width=True)
 
+    if fig_top is not None:
+        st.subheader("Top Agressores (Tape Reading)")
+        st.plotly_chart(fig_top, use_container_width=True)
+
     st.subheader("Análise automática (heurística) dos dados")
-    st.markdown(render_response(insights))
+    st.markdown(render_response(insights))  # texto com pressão dos agressores + ranking
 
 else:
     st.info("Carregue um XLSX do Profit para começar.")
