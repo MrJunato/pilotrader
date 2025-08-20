@@ -11,13 +11,9 @@ def build_system_prompt(market: str = "índice", rule_based_summary: Optional[st
         "Responda com passos práticos e linguagem fácil, como se estivesse explicando para alguém iniciante. "
     )
     if main_signal:
-        base += (
-            f"\n\nResumo visual da análise automática: {main_signal.get('icon','')} {main_signal.get('label','')} — {main_signal.get('help','')}"
-        )
+        base += f"\n\nResumo visual da análise automática: {main_signal.get('icon','')} {main_signal.get('label','')} — {main_signal.get('help','')}"
     if rule_based_summary:
-        base += (
-            f"\n\nResumo detalhado da análise automática:\n{rule_based_summary}"
-        )
+        base += f"\n\nResumo detalhado da análise automática:\n{rule_based_summary}"
     base += (
         "\n\nSempre inclua: (1) resumo em 1-2 frases simples, (2) sinais observados (explique o que significa), "
         "(3) possíveis ideias de operação com foco em evitar perdas, e (4) notas sobre incertezas. "
@@ -31,6 +27,7 @@ def assemble_messages(
     system_prompt: Optional[str] = None,
     rule_based: Optional[dict] = None,
     history: Optional[List[Dict]] = None,
+    chat_summary: Optional[str] = None
 ) -> List[Dict]:
     # Monta o prompt do sistema com dados do rule_based se disponíveis
     if rule_based:
@@ -43,6 +40,9 @@ def assemble_messages(
 
     messages = [{"role": "system", "content": system}]
 
+    if chat_summary:
+        messages.append({"role": "system", "content": f"Resumo da conversa até aqui:\n{chat_summary[:1500]}"})
+
     # Few-shot didático
     few_shot = [
         {"role": "user", "content": "Resumo rápido do tape: houve um print grande comprador no topo da faixa, mas sem follow-through."},
@@ -50,7 +50,7 @@ def assemble_messages(
     ]
     messages += few_shot
 
-    # Detalhes adicionais do rule_based no contexto
+    # Detalhes do rule_based (níveis, prints grandes, top agressores)
     if rule_based:
         if rule_based.get("levels"):
             levels = ", ".join([f"{t}: {v:.2f}" for t, v in rule_based["levels"]])
@@ -58,8 +58,6 @@ def assemble_messages(
         if rule_based.get("big_prints"):
             bp = rule_based["big_prints"][-1]
             messages.append({"role": "system", "content": f"Negócio grande recente: {bp['side']} volume={bp['volume']:.0f} @ {bp['price']:.2f} ({bp['ts']})"})
-        
-        # top agressores, se presentes no insights (preenchidos no app) 
         tb = rule_based.get("top_buy_aggressors") or []
         ts = rule_based.get("top_sell_aggressors") or []
         if tb:
@@ -72,12 +70,10 @@ def assemble_messages(
     if df_sample_text:
         messages.append({"role": "user", "content": "Aqui estão exemplos de leituras do tape:\n" + df_sample_text})
 
-    # Histórico do chat (user/assistant) antes da pergunta atual
+    # Histórico curto (continuidade local)
     if history:
-        for h in history:
-            # h deve ser {"role": "user"|"assistant", "content": "..."}
-            messages.append(h)
+        messages.extend(history)
 
-    # Por último, a pergunta atual
+    # Pergunta atual
     messages.append({"role": "user", "content": user_text})
     return messages

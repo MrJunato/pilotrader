@@ -10,6 +10,7 @@ from tape_gpt.viz.charts import candle_volume_figure, buy_sell_imbalance_figures
 from tape_gpt.analysis.orderflow import top_aggressors
 from tape_gpt.chat.prompts import build_system_prompt, assemble_messages
 from tape_gpt.chat.client import call_openai
+from tape_gpt.chat.summarizer import summarize_chat
 from tape_gpt.analysis.rule_based import analyze_tape, render_response
 
 st.set_page_config(page_title="TapeGPT — Chatbot Tape Reading & TA", layout="wide")
@@ -108,6 +109,8 @@ max_history = st.sidebar.slider("Mensagens de contexto (max)", min_value=2, max_
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "chat_summary" not in st.session_state:
+    st.session_state.chat_summary = ""  # memória de longo prazo
 
 st.markdown('---')
 st.subheader("Chat — pergunte ao especialista")
@@ -124,12 +127,19 @@ for turn in st.session_state.chat_history[-max_history:]:
         st.markdown(f"**TapeGPT:** {turn['assistant']}")
 
 # Entrada do usuário
-user_input = st.chat_input("Digite sua mensagem e pressione Enter...")
+user_input = st.chat_input("Digite sua mensagem e pressione Enter.")
 
 if user_input:
     if not user_input.strip():
         st.warning("Escreva uma pergunta.")
     else:
+        # 1) History curto para contexto local do AnswerAgent
+        history_msgs = []
+        for turn in st.session_state.chat_history[-max_history:]:
+            history_msgs.append({"role": "user", "content": turn["user"]})
+            history_msgs.append({"role": "assistant", "content": turn["assistant"]})
+
+        # 2) Amostra do DF (como antes)
         df_text = None
         if uploaded_df is not None:
             try:
@@ -138,14 +148,19 @@ if user_input:
             except Exception:
                 pass
 
+        # 3) Montar mensagens do AnswerAgent com multi-contexto:
+        #    - rule_based=insights (AnalyzerAgent)
+        #    - chat_summary (SummarizerAgent)
+        #    - history_msgs + df_text
         messages = assemble_messages(
             user_text=user_input,
             df_sample_text=df_text,
-            rule_based=insights,               # injeta summary/main_signal/levels/prints grandes
-            history=history_msgs               # injeta últimos turnos do chat
+            rule_based=insights if uploaded_df is not None else None,
+            history=history_msgs,
+            chat_summary=st.session_state.chat_summary or None,
         )
 
-        with st.spinner("Consultando modelo..."):
+        with st.spinner("Consultando modelo."):
             try:
                 assistant_text = call_openai(
                     api_key=openai_api_key,
@@ -157,11 +172,32 @@ if user_input:
                 assistant_text = None
 
         if assistant_text:
+            # 4) Persistir turno no histórico
             st.session_state.chat_history.append({
                 "user": user_input,
                 "assistant": assistant_text,
                 "time": datetime.utcnow().isoformat()
             })
+
+            # 5) SummarizerAgent: atualiza a memória de longo prazo
+            try:
+                long_history = []
+                for turn in st.session_state.chat_history:
+                    long_history.append({"role": "user", "content": turn["user"]})
+                    long_history.append({"role": "assistant", "content": turn["assistant"]})
+                new_summary = summarize_chat(
+                    api_key=openai_api_key,
+                    model=settings.CHEAPER_MODEL,
+                    history=long_history,
+                    prior_summary=st.session_state.chat_summary or "",
+                    insights=insights if uploaded_df is not None else None,
+                    max_turns=12,  # controla custo do summarizer
+                )
+                if new_summary:
+                    st.session_state.chat_summary = new_summary
+            except Exception as e:
+                st.warning(f"Falha ao resumir a conversa: {e}")
+
             st.rerun()
 
 # Footer
