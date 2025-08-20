@@ -21,7 +21,7 @@ settings = get_settings()
 openai_api_key = settings.OPENAI_API_KEY or require_openai_api_key()
 
 # Cabeçalho
-st.title("TapeGPT — Chatbot de Tape Reading e Análise Técnica (Day Trade)")
+st.title("Pilotrader — Análise automatizada de Tape Reading")
 st.markdown("""
 **Atenção:** Esta ferramenta é apenas para suporte à decisão. Não há garantias de resultado.
 Teste em conta demo / backtest antes de operar ao vivo.
