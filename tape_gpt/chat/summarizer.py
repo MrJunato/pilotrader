@@ -1,6 +1,6 @@
 # file: tape_gpt/chat/summarizer.py
 from typing import List, Dict, Optional
-from .client import call_openai  # usa a mesma Responses API já utilizada no app
+from .client import call_openai
 
 def summarize_chat(
     api_key: str,
@@ -44,4 +44,11 @@ def summarize_chat(
     msgs.extend(h)
     msgs.append({"role": "user", "content": "Atualize o resumo da conversa seguindo as instruções acima."})
 
-    return call_openai(api_key=api_key, model=model, messages=msgs, max_output_tokens=240, temperature=0.2)
+    # Tenta temperature=0.2; se o modelo não suportar, o client re-tenta sem.
+    return call_openai(
+        api_key=api_key,
+        model=model,
+        messages=msgs,
+        max_output_tokens=240,
+        temperature=0.2
+    )
