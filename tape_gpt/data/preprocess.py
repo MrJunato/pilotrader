@@ -28,6 +28,17 @@ def compute_imbalances(df: pd.DataFrame, window: str = "1min") -> pd.DataFrame:
     vbuy = temp[temp['side'] == "buy"].volume.resample(window).sum().fillna(0)
     vsell = temp[temp['side'] == "sell"].volume.resample(window).sum().fillna(0)
     imbalance = (vbuy - vsell) / (vbuy + vsell + 1e-9)
-    out = pd.DataFrame({"vbuy": vbuy, "vsell": vsell, "imbalance": imbalance})
+
+    # Diferença absoluta pedida (vendedores - compradores) e escala local
+    aggr_diff = (vsell - vbuy)  # positivo => dom. vendedora; negativo => dom. compradora
+    total_volume = (vbuy + vsell)
+
+    out = pd.DataFrame({
+        "vbuy": vbuy,
+        "vsell": vsell,
+        "imbalance": imbalance,
+        "aggr_diff": aggr_diff,
+        "total_volume": total_volume
+    })
     out.index.name = "timestamp"
     return out
