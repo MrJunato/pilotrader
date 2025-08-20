@@ -332,7 +332,7 @@ def render_response(insights: dict, user_text: str = "") -> str:
         "Se não entender o cenário, prefira não operar. Proteger seu dinheiro é prioridade."
     )
     res.append(
-        "Esta análise é baseada em regras simples e pode não captar todos os riscos. "
+        "Esta análise é baseada em técnicas específicas e pode não captar todos os riscos. "
         "Consulte outras fontes e nunca opere apenas por este resumo."
     )
     if user_text:
