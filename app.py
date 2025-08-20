@@ -6,8 +6,7 @@ from tape_gpt.viz.indicators import render_main_signal_indicator
 from tape_gpt.config import get_settings, require_openai_api_key
 from tape_gpt.data.loaders import parse_profit_excel
 from tape_gpt.data.preprocess import preprocess_ts, compute_imbalances
-from tape_gpt.viz.charts import candle_volume_figure, buy_sell_imbalance_figures
-from tape_gpt.viz.charts import top_aggressors_figure
+from tape_gpt.viz.charts import candle_volume_figure, buy_sell_imbalance_figures, top_aggressors_figure
 from tape_gpt.analysis.orderflow import top_aggressors
 from tape_gpt.chat.prompts import build_system_prompt, assemble_messages
 from tape_gpt.chat.client import call_openai
