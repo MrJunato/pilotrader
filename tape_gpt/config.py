@@ -2,7 +2,8 @@
 import os
 from dataclasses import dataclass
 
-DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"  # modelo padrão para Responses API
+DEFAULT_OPENAI_MODEL = "gpt-5"  # modelo padrão para Responses API
+CHEAPER_OPENAI_MODEL = "gpt-5-mini"
 
 def _get_env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
@@ -27,7 +28,8 @@ def get_settings() -> Settings:
     # prioridade: secrets -> env -> vazio
     api_key = _get_from_streamlit_secrets("OPENAI_API_KEY") or _get_env("OPENAI_API_KEY", "")
     model = _get_from_streamlit_secrets("OPENAI_MODEL") or _get_env("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
-    return Settings(OPENAI_API_KEY=api_key, OPENAI_MODEL=model)
+    cheaper_model = _get_from_streamlit_secrets("CHEAPER_MODEL") or _get_env("CHEAPER_MODEL", CHEAPER_OPENAI_MODEL)
+    return Settings(OPENAI_API_KEY=api_key, OPENAI_MODEL=model, CHEAPER_MODEL=cheaper_model)
 
 def require_openai_api_key() -> str:
     """
