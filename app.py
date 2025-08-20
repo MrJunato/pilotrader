@@ -26,7 +26,6 @@ st.markdown("""
 **Atenção:** Esta ferramenta é apenas para suporte à decisão. Não há garantias de resultado.
 Teste em conta demo / backtest antes de operar ao vivo.
 """)
-st.caption(f"Modelo: {settings.OPENAI_MODEL}")
 
 # Sidebar: upload / conexões
 st.sidebar.header("Dados de mercado")
@@ -113,6 +112,7 @@ if "chat_history" not in st.session_state:
 
 st.markdown('---')
 st.subheader("Chat — pergunte ao especialista")
+st.caption(f"Modelo: {settings.OPENAI_MODEL}")
 
 # Exibe histórico
 for turn in st.session_state.chat_history[-max_history:]:
