@@ -66,3 +66,37 @@ def buy_sell_imbalance_figures(imbs: pd.DataFrame):
         margin=dict(l=10, r=10, t=30, b=10)
     )
     return fig_bs, fig_imb
+
+def top_aggressors_figure(top_buy: pd.DataFrame, top_sell: pd.DataFrame) -> go.Figure:
+    """
+    Desenha barras horizontais: vendedores à esquerda (vermelho, valores negativos),
+    compradores à direita (verde). “agent” no eixo Y, “volume” no eixo X.
+    """
+    # prepara dados (agentes como strings curtas)
+    tb = top_buy.copy()
+    ts = top_sell.copy()
+    tb["agent"] = tb["agent"].astype(str)
+    ts["agent"] = ts["agent"].astype(str)
+    ts["volume_plot"] = -ts["volume"]  # espelhar vendedores
+
+    fig = go.Figure()
+    # Vendedores (esquerda)
+    fig.add_trace(go.Bar(
+        y=ts["agent"], x=ts["volume_plot"], orientation="h",
+        name="Agressores de Venda", marker_color="rgba(200,0,0,0.7)"
+    ))
+    # Compradores (direita)
+    fig.add_trace(go.Bar(
+        y=tb["agent"], x=tb["volume"], orientation="h",
+        name="Agressores de Compra", marker_color="rgba(0,160,0,0.7)"
+    ))
+    fig.update_layout(
+        barmode="overlay",
+        xaxis_title="Volume agredido",
+        yaxis_title="Agente",
+        legend=dict(orientation="h"),
+        height=300,
+        margin=dict(l=10, r=10, t=30, b=10),
+        xaxis=dict(zeroline=True)
+    )
+    return fig
