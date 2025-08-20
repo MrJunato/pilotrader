@@ -1,4 +1,4 @@
-# file: tape_gpt/chat/rule_based.py
+# file: tape_gpt/analysis/rule_based.py
 import numpy as np
 import pandas as pd
 
