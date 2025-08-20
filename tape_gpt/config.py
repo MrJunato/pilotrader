@@ -2,8 +2,8 @@
 import os
 from dataclasses import dataclass
 
-DEFAULT_OPENAI_MODEL = "gpt-5"  # modelo padrão para Responses API
-CHEAPER_OPENAI_MODEL = "gpt-5-mini"
+DEFAULT_OPENAI_MODEL = "gpt-5-mini"  # modelo padrão para Responses API
+CHEAPER_OPENAI_MODEL = "gpt-5-nano"
 
 def _get_env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
