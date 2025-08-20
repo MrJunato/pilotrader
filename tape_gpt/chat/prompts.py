@@ -72,7 +72,7 @@ def assemble_messages(
     if df_sample_text:
         messages.append({"role": "user", "content": "Aqui estão exemplos de leituras do tape:\n" + df_sample_text})
 
-    # NOVO: histórico do chat (user/assistant) antes da pergunta atual
+    # Histórico do chat (user/assistant) antes da pergunta atual
     if history:
         for h in history:
             # h deve ser {"role": "user"|"assistant", "content": "..."}
