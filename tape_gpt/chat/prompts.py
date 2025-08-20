@@ -29,7 +29,8 @@ def assemble_messages(
     user_text: str,
     df_sample_text: Optional[str] = None,
     system_prompt: Optional[str] = None,
-    rule_based: Optional[dict] = None
+    rule_based: Optional[dict] = None,
+    history: Optional[List[Dict]] = None,
 ) -> List[Dict]:
     # Monta o prompt do sistema com dados do rule_based se disponíveis
     if rule_based:
@@ -39,21 +40,44 @@ def assemble_messages(
         )
     else:
         system = system_prompt or build_system_prompt()
+
     messages = [{"role": "system", "content": system}]
+
+    # Few-shot didático
     few_shot = [
         {"role": "user", "content": "Resumo rápido do tape: houve um print grande comprador no topo da faixa, mas sem follow-through."},
         {"role": "assistant", "content": "Resumo: Mercado mostrou indecisão, pode ser sinal de exaustão de venda. Sinais: grande negócio de compra (volume alto) numa região de resistência, mas sem continuidade. Ideia: esperar o preço cair um pouco antes de pensar em comprar; sempre use stop-loss. Incerteza: não houve confirmação em candles seguintes. (Obs: 'print grande' significa um negócio de volume muito acima da média, geralmente feito por participantes grandes.)"}
     ]
     messages += few_shot
+
+    # Detalhes adicionais do rule_based no contexto
     if rule_based:
-        # Inclui sinais e níveis relevantes do rule_based
         if rule_based.get("levels"):
             levels = ", ".join([f"{t}: {v:.2f}" for t, v in rule_based["levels"]])
             messages.append({"role": "system", "content": f"Níveis importantes detectados: {levels}"})
         if rule_based.get("big_prints"):
             bp = rule_based["big_prints"][-1]
             messages.append({"role": "system", "content": f"Negócio grande recente: {bp['side']} volume={bp['volume']:.0f} @ {bp['price']:.2f} ({bp['ts']})"})
+        
+        # top agressores, se presentes no insights (preenchidos no app) 
+        tb = rule_based.get("top_buy_aggressors") or []
+        ts = rule_based.get("top_sell_aggressors") or []
+        if tb:
+            topb_txt = ", ".join([f"{a}({v:.0f})" for a, v in tb[:5]])
+            messages.append({"role": "system", "content": f"Top agressores de COMPRA: {topb_txt}"})
+        if ts:
+            tops_txt = ", ".join([f"{a}({v:.0f})" for a, v in ts[:5]])
+            messages.append({"role": "system", "content": f"Top agressores de VENDA: {tops_txt}"})
+
     if df_sample_text:
         messages.append({"role": "user", "content": "Aqui estão exemplos de leituras do tape:\n" + df_sample_text})
+
+    # NOVO: histórico do chat (user/assistant) antes da pergunta atual
+    if history:
+        for h in history:
+            # h deve ser {"role": "user"|"assistant", "content": "..."}
+            messages.append(h)
+
+    # Por último, a pergunta atual
     messages.append({"role": "user", "content": user_text})
     return messages
