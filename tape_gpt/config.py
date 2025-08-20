@@ -23,6 +23,7 @@ def _get_from_streamlit_secrets(name: str) -> str:
 class Settings:
     OPENAI_API_KEY: str
     OPENAI_MODEL: str
+    CHEAPER_MODEL: str
 
 def get_settings() -> Settings:
     # prioridade: secrets -> env -> vazio
