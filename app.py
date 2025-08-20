@@ -105,7 +105,7 @@ else:
 # === Chat interface ===
 st.sidebar.header("Chatbot")
 user_name = st.sidebar.text_input("Seu nome (opcional)", value="Trader")
-max_history = st.sidebar.slider("Mensagens de contexto (max)", min_value=2, max_value=20, value=8)
+max_history = settings.MAX_HISTORY
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []

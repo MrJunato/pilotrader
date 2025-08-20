@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 DEFAULT_OPENAI_MODEL = "gpt-5-mini"  # modelo padrão para Responses API
 CHEAPER_OPENAI_MODEL = "gpt-5-nano"
+MAX_HISTORY = 8
 
 def _get_env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
@@ -24,13 +25,14 @@ class Settings:
     OPENAI_API_KEY: str
     OPENAI_MODEL: str
     CHEAPER_MODEL: str
+    MAX_HISTORY: int = MAX_HISTORY  # mensagens de contexto padrão
 
 def get_settings() -> Settings:
     # prioridade: secrets -> env -> vazio
     api_key = _get_from_streamlit_secrets("OPENAI_API_KEY") or _get_env("OPENAI_API_KEY", "")
     model = _get_from_streamlit_secrets("OPENAI_MODEL") or _get_env("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
     cheaper_model = _get_from_streamlit_secrets("CHEAPER_MODEL") or _get_env("CHEAPER_MODEL", CHEAPER_OPENAI_MODEL)
-    return Settings(OPENAI_API_KEY=api_key, OPENAI_MODEL=model, CHEAPER_MODEL=cheaper_model)
+    return Settings(OPENAI_API_KEY=api_key, OPENAI_MODEL=model, CHEAPER_MODEL=cheaper_model, MAX_HISTORY=MAX_HISTORY)
 
 def require_openai_api_key() -> str:
     """
