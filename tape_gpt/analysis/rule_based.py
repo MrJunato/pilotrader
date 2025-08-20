@@ -12,6 +12,7 @@ def _pct(a, b):
 
 def analyze_tape(df: pd.DataFrame, imbs: pd.DataFrame, freq: str = "1min") -> dict:
     out = {
+        # (campos existentes) 
         "summary": "Dados insuficientes.",
         "trend": "indefinida",
         "price_change_pct": 0.0,
@@ -24,13 +25,14 @@ def analyze_tape(df: pd.DataFrame, imbs: pd.DataFrame, freq: str = "1min") -> di
         "big_prints": [],
         "levels": [],
         "volatility": 0.0,
-        # Novos campos para insights
         "big_prints_cluster": [],
         "volatility_rel": 0.0,
         "reversal_detected": False,
         "volume_concentration": "",
         "liquidity_comment": "",
         "main_signal": {"label": "Indefinido", "color": "gray", "icon": "❔", "help": ""},
+        "aggressor_diff_last": 0.0,   # vsell - vbuy (última janela)
+        "aggressor_strength": 0.0,    # (vsell - vbuy) / total_volume
     }
     if df is None or len(df) < 10:
         out["summary"] = "Poucos dados para análise. Evite operar até ter mais informações."
@@ -64,7 +66,7 @@ def analyze_tape(df: pd.DataFrame, imbs: pd.DataFrame, freq: str = "1min") -> di
     except Exception:
         volatility_rel = 1.0
 
-    # Imbalance e volumes por janela (corrigido para evitar NaN/0 indevidos)
+    # Imbalance e volumes por janela + métricas de pressão
     if imbs is not None and len(imbs) > 0:
         imbs_valid = imbs.dropna(subset=["vbuy", "vsell", "imbalance"])
         if len(imbs_valid) > 0:
@@ -74,10 +76,24 @@ def analyze_tape(df: pd.DataFrame, imbs: pd.DataFrame, freq: str = "1min") -> di
             take = min(5, len(imbs_valid))
             vbuy_5 = float(imbs_valid["vbuy"].tail(take).sum())
             vsell_5 = float(imbs_valid["vsell"].tail(take).sum())
+
+            # NOVO: vsell - vbuy e intensidade relativa à escala da janela
+            if "aggr_diff" in imbs_valid.columns and "total_volume" in imbs_valid.columns:
+                aggr_diff_last = float(imbs_valid["aggr_diff"].iloc[-1])
+                total_last = float(imbs_valid["total_volume"].iloc[-1]) if not pd.isna(imbs_valid["total_volume"].iloc[-1]) else (vbuy_last + vsell_last)
+                aggressor_strength = aggr_diff_last / (total_last + 1e-9)  # ∈ [-1,1]
+            else:
+                aggr_diff_last = vsell_last - vbuy_last
+                total_last = (vbuy_last + vsell_last)
+                aggressor_strength = aggr_diff_last / (total_last + 1e-9)
         else:
             vbuy_last = vsell_last = vbuy_5 = vsell_5 = imb_last = 0.0
+            aggr_diff_last = 0.0
+            aggressor_strength = 0.0
     else:
         vbuy_last = vsell_last = vbuy_5 = vsell_5 = imb_last = 0.0
+        aggr_diff_last = 0.0
+        aggressor_strength = 0.0
 
     # Prints grandes (percentil 95 no último bloco)
     vols = tail_trades["volume"].astype(float)
@@ -92,7 +108,7 @@ def analyze_tape(df: pd.DataFrame, imbs: pd.DataFrame, freq: str = "1min") -> di
             "side": str(r.get("side", "unknown"))
         })
 
-    # Novos insights: cluster de prints grandes (>=3 em 2min)
+    # Cluster de prints grandes (>=3 em 2min)
     big_prints_cluster = []
     if len(big) >= 3:
         big_sorted = big.sort_values("timestamp")
@@ -153,50 +169,68 @@ def analyze_tape(df: pd.DataFrame, imbs: pd.DataFrame, freq: str = "1min") -> di
     else:
         liquidity_comment = f"Liquidez moderada (volume médio por trade: {avg_vol:.0f})"
 
-    # Definição do sinal principal para indicador visual
-    if trend == "alta" and imb_last > 0.1 and not reversal_detected:
-        main_signal = {
-            "label": "Possível Alta",
-            "color": "green",
-            "icon": "⬆️",
-            "help": "O tape reading indica tendência de alta. Evite comprar no topo, prefira esperar correções."
-        }
-    elif trend == "baixa" and imb_last < -0.1 and not reversal_detected:
-        main_signal = {
-            "label": "Possível Queda",
-            "color": "red",
-            "icon": "⬇️",
-            "help": "O tape reading indica tendência de baixa. Evite operar comprado, prefira esperar repiques."
-        }
-    elif reversal_detected:
-        main_signal = {
-            "label": "Atenção: Possível Reversão",
-            "color": "orange",
-            "icon": "⚠️",
-            "help": "Há sinais de reversão. Evite operar até o mercado mostrar direção clara."
-        }
-    elif trend == "lateral":
-        main_signal = {
-            "label": "Estagnação / Lateralização",
-            "color": "gray",
-            "icon": "⏸️",
-            "help": "Mercado sem direção clara. O melhor é não operar ou usar posições pequenas."
-        }
+    # Sinal principal — incorporar pressão dos agressores
+    # Regra: se |aggressor_strength| for grande (ex.: > 0.35), prioriza a leitura de fluxo.
+    # Caso contrário, mantém lógica anterior baseada em tendência + imbalance. 
+    thr = 0.35
+    if abs(aggressor_strength) >= thr and not reversal_detected:
+        if aggressor_strength > 0:
+            main_signal = {
+                "label": "Domínio Vendedor (Agressores)",
+                "color": "red",
+                "icon": "⬇️",
+                "help": "Agressões vendedoras dominando o fluxo. Evite compras; venda apenas em repiques com stop."
+            }
+        else:
+            main_signal = {
+                "label": "Domínio Comprador (Agressores)",
+                "color": "green",
+                "icon": "⬆️",
+                "help": "Agressões compradoras dominando o fluxo. Evite vender; compre somente em correções com stop."
+            }
     else:
-        main_signal = {
-            "label": "Cenário Indefinido",
-            "color": "gray",
-            "icon": "❔",
-            "help": "Não há sinais claros no tape reading. Prefira não operar."
-        }
+        if trend == "alta" and imb_last > 0.1 and not reversal_detected:
+            main_signal = {
+                "label": "Possível Alta",
+                "color": "green",
+                "icon": "⬆️",
+                "help": "O tape reading indica tendência de alta. Evite comprar no topo, prefira esperar correções."
+            }
+        elif trend == "baixa" and imb_last < -0.1 and not reversal_detected:
+            main_signal = {
+                "label": "Possível Queda",
+                "color": "red",
+                "icon": "⬇️",
+                "help": "O tape reading indica tendência de baixa. Evite operar comprado, prefira esperar repiques."
+            }
+        elif reversal_detected:
+            main_signal = {
+                "label": "Atenção: Possível Reversão",
+                "color": "orange",
+                "icon": "⚠️",
+                "help": "Há sinais de reversão. Evite operar até o mercado mostrar direção clara."
+            }
+        elif trend == "lateral":
+            main_signal = {
+                "label": "Estagnação / Lateralização",
+                "color": "gray",
+                "icon": "⏸️",
+                "help": "Mercado sem direção clara. O melhor é não operar ou usar posições pequenas."
+            }
+        else:
+            main_signal = {
+                "label": "Cenário Indefinido",
+                "color": "gray",
+                "icon": "❔",
+                "help": "Não há sinais claros no tape reading. Prefira não operar."
+            }
 
     out.update({
         "summary": (
-            f"Tendência: {trend.upper()} ({'subida' if trend=='alta' else 'queda' if trend=='baixa' else 'lateral'}), variação de {change_pct:.2f}%. "
-            f"Imbalance atual: {imb_last:.2f}. "
-            f"Volatilidade: {volat:.3f} ({'ALTA' if volatility_rel>1.2 else 'BAIXA' if volatility_rel<0.8 else 'normal'}). "
-            f"{volume_concentration}. {liquidity_comment} "
-            "⚠️ Lembre-se: proteger seu capital é mais importante que buscar ganhos rápidos."
+            f"Tendência: {trend.upper()} "
+            f"— Δ {change_pct:.2f}%. Imbalance={imb_last:.2f}. "
+            f"Pressão dos agressores (vsell - vbuy)={aggr_diff_last:.0f} "
+            f"({aggressor_strength:+.2f} do volume da janela)."
         ),
         "trend": trend,
         "price_change_pct": change_pct,
@@ -214,6 +248,8 @@ def analyze_tape(df: pd.DataFrame, imbs: pd.DataFrame, freq: str = "1min") -> di
         "volume_concentration": volume_concentration,
         "liquidity_comment": liquidity_comment,
         "main_signal": main_signal,
+        "aggressor_diff_last": aggr_diff_last,
+        "aggressor_strength": aggressor_strength,
     })
     return out
 
@@ -222,23 +258,42 @@ def render_response(insights: dict, user_text: str = "") -> str:
     res.append(f"Resumo: {insights['summary']}")
     sinais = []
     sinais.append(f"- Volume recente: compra={insights['vbuy_last']:.0f}, venda={insights['vsell_last']:.0f}, imbalance={insights['imb_last']:.2f}")
+    sinais.append(f"- Pressão agressores: vsell - vbuy = {insights.get('aggressor_diff_last',0.0):.0f} "
+                  f"({insights.get('aggressor_strength',0.0):+.2f} do volume)")
     sinais.append(f"- Acúmulo (últimas janelas): compra={insights['vbuy_5']:.0f}, venda={insights['vsell_5']:.0f}")
+
     if insights["big_prints"]:
         bp = insights["big_prints"][-1]
         sinais.append(f"- Negócio grande recente: {bp['side']} volume={bp['volume']:.0f} @ {bp['price']:.2f} ({bp['ts']})")
+
     if insights.get("big_prints_cluster"):
         c = insights["big_prints_cluster"][0]
         sinais.append(f"- Sequência de grandes negócios: {c['side']} total={c['vol_sum']:.0f} entre {c['start']} e {c['end']}")
+
     if insights["levels"]:
         lv = ", ".join([f"{t}:{v:.2f}" for t, v in insights["levels"]])
         sinais.append(f"- Níveis importantes: {lv}")
     sinais.append(f"- Volatilidade estimada={insights['volatility']:.3f} (relativa: {insights['volatility_rel']:.2f})")
+
     if insights.get("reversal_detected"):
         sinais.append("- Atenção: possível reversão de tendência nos últimos negócios.")
+
     if insights.get("volume_concentration"):
         sinais.append(f"- {insights['volume_concentration']}")
+
     if insights.get("liquidity_comment"):
         sinais.append(f"- {insights['liquidity_comment']}")
+
+    if insights.get("top_buy_aggressors") or insights.get("top_sell_aggressors"):
+        tb = insights.get("top_buy_aggressors", [])
+        ts = insights.get("top_sell_aggressors", [])
+        if tb:
+            topb_txt = ", ".join([f"{a}({v:.0f})" for a,v in tb[:5]])
+            sinais.append(f"- Top agressores de COMPRA: {topb_txt}")
+        if ts:
+            tops_txt = ", ".join([f"{a}({v:.0f})" for a,v in ts[:5]])
+            sinais.append(f"- Top agressores de VENDA: {tops_txt}")
+
     res.append("Sinais observados:\n" + "\n".join(sinais))
 
     # Recomendações sempre focadas em evitar perdas
