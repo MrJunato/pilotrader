@@ -178,19 +178,11 @@ if tab == "Painel":
         st.markdown(render_response(insights))
 
         # 5) Time & Sales + Book
-        st.subheader("Book (Ofertas) e Times & Trades")
-        col_bk, col_ts = st.columns(2)
-        with col_bk:
-            if offers_df is not None and len(offers_df) > 0:
-                st.plotly_chart(order_book_figure(offers_df, depth=12), use_container_width=True)
-            else:
-                st.info("Sem dados de ofertas (book) disponíveis.")
-
-        with col_ts:
-            if uploaded_df is not None and len(uploaded_df) > 0:
-                st.plotly_chart(time_and_sales_figure(uploaded_df, limit=200), use_container_width=True)
-            else:
-                st.info("Sem dados de negócios disponíveis.")
+        st.subheader("Times & Trades")  
+        if uploaded_df is not None and len(uploaded_df) > 0:
+            st.plotly_chart(time_and_sales_figure(uploaded_df, limit=200), use_container_width=True)
+        else:
+            st.info("Sem dados de negócios disponíveis.")
 
         # Auto-refresh apenas quando a aba Painel está ativa
         if data_source == "Simular tempo real" and st.session_state.sim.is_running():
