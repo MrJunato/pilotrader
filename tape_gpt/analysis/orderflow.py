@@ -14,6 +14,12 @@ def extract_aggressor_trades(df_raw: pd.DataFrame) -> pd.DataFrame:
     for c in ("timestamp","side","volume"):
         if c not in df.columns:
             raise ValueError(f"Coluna '{c}' ausente para extrair agressores.")
+    # Se 'volume' for DataFrame (nomes duplicados), reduza para a primeira coluna numérica
+    if isinstance(df["volume"], pd.DataFrame):
+        df["volume"] = pd.to_numeric(df["volume"].iloc[:, 0], errors="coerce")
+    else:
+        df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
+
     df["side"] = df["side"].astype(str).str.lower()
     if "buyer_agent" not in df.columns and "seller_agent" not in df.columns:
         # não há agentes: não há como ranquear "quem"
@@ -30,11 +36,11 @@ def extract_aggressor_trades(df_raw: pd.DataFrame) -> pd.DataFrame:
     return df[["timestamp","side","volume","aggressor_agent"]]
 
 def top_aggressors(df_raw: pd.DataFrame, lookback: str = "30min", top_n: int = 5) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Retorna dois DataFrames (top_buy, top_sell) com colunas: agent, volume, trades.
-    """
     dfa = extract_aggressor_trades(df_raw).dropna(subset=["aggressor_agent"])
-    dfa = dfa.sort_values("timestamp")
+    # Normaliza timestamps para evitar naive/aware mix
+    dfa["timestamp"] = pd.to_datetime(dfa["timestamp"], errors="coerce", utc=True)
+    dfa = dfa.dropna(subset=["timestamp"]).sort_values("timestamp")
+
     if lookback:
         end = dfa["timestamp"].max()
         start = end - pd.to_timedelta(lookback)
@@ -47,6 +53,5 @@ def top_aggressors(df_raw: pd.DataFrame, lookback: str = "30min", top_n: int = 5
 
     top_buy  = grp[grp["side"]=="buy"].nlargest(top_n, "volume")[["aggressor_agent","volume","trades"]]
     top_sell = grp[grp["side"]=="sell"].nlargest(top_n, "volume")[["aggressor_agent","volume","trades"]]
-    top_buy  = top_buy.rename(columns={"aggressor_agent":"agent"})
-    top_sell = top_sell.rename(columns={"aggressor_agent":"agent"})
-    return top_buy, top_sell
+    return (top_buy.rename(columns={"aggressor_agent":"agent"}),
+            top_sell.rename(columns={"aggressor_agent":"agent"}))
