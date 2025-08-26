@@ -90,7 +90,7 @@ if data_source == "Simular tempo real":
             uploaded_df = uploaded_df.rename(columns={"Quantidade": "volume"})
         offers_df = sim_offers.copy()
 
-#### Fonte 2: Upload XLSX Profit
+#### Fonte 2: Upload XLSX
 elif data_source == "Upload Excel (Profit Times in Trade)":
     excel_file = st.sidebar.file_uploader("Envie XLSX do Profit (abas: ofertas, negocios)", type=["xlsx"])
     if excel_file:
