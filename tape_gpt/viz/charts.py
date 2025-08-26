@@ -68,28 +68,33 @@ def buy_sell_imbalance_figures(imbs: pd.DataFrame):
     return fig_bs, fig_imb
 
 def top_aggressors_figure(top_buy: pd.DataFrame, top_sell: pd.DataFrame) -> go.Figure:
-    """
-    Desenha barras horizontais: vendedores à esquerda (vermelho, valores negativos),
-    compradores à direita (verde). “agent” no eixo Y, “volume” no eixo X.
-    """
-    # prepara dados (agentes como strings curtas)
-    tb = top_buy.copy()
-    ts = top_sell.copy()
-    tb["agent"] = tb["agent"].astype(str)
-    ts["agent"] = ts["agent"].astype(str)
-    ts["volume_plot"] = -ts["volume"]  # espelhar vendedores
+    tb = top_buy.copy() if top_buy is not None else pd.DataFrame()
+    ts = top_sell.copy() if top_sell is not None else pd.DataFrame()
+
+    for col in ("agent", "volume", "trades"):
+        if col not in tb.columns:
+            tb[col] = []
+        if col not in ts.columns:
+            ts[col] = []
+
+    tb["agent"]  = tb["agent"].astype(str).fillna("")
+    ts["agent"]  = ts["agent"].astype(str).fillna("")
+    tb["volume"] = pd.to_numeric(tb["volume"], errors="coerce").fillna(0.0)
+    ts["volume"] = pd.to_numeric(ts["volume"], errors="coerce").fillna(0.0)
+
+    ts["volume_plot"] = -ts["volume"]
+
+    y_sell = ts["agent"].tolist()
+    x_sell = ts["volume_plot"].to_numpy()
+    y_buy  = tb["agent"].tolist()
+    x_buy  = tb["volume"].to_numpy()
 
     fig = go.Figure()
-    # Vendedores (esquerda)
-    fig.add_trace(go.Bar(
-        y=ts["agent"], x=ts["volume_plot"], orientation="h",
-        name="Agressores de Venda", marker_color="rgba(200,0,0,0.7)"
-    ))
-    # Compradores (direita)
-    fig.add_trace(go.Bar(
-        y=tb["agent"], x=tb["volume"], orientation="h",
-        name="Agressores de Compra", marker_color="rgba(0,160,0,0.7)"
-    ))
+    fig.add_trace(go.Bar(y=y_sell, x=x_sell, orientation="h",
+                         name="Agressores de Venda", marker_color="rgba(200,0,0,0.7)"))
+    fig.add_trace(go.Bar(y=y_buy, x=x_buy, orientation="h",
+                         name="Agressores de Compra", marker_color="rgba(0,160,0,0.7)"))
+
     fig.update_layout(
         barmode="overlay",
         xaxis_title="Volume agredido",
